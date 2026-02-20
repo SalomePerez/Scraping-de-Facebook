@@ -36,20 +36,24 @@ def extraer_numero(texto: str) -> int:
     # 2. Detectar multiplicador y limpiar sufijo
     multiplicador = 1
     
-    # 'k' (miles)
-    if 'k' in texto:
+    # Regex para buscar número seguido de sufijo k/m/mil
+    # Ej: 1.5k, 10m, 5 mil
+    
+    # 'k'
+    if re.search(r'\d+\s*k\b', texto):
         multiplicador = 1000
         texto = texto.replace('k', '')
         
-    # 'mil' (miles) - Cuidado de no confundir con 'million' si existiera, pero en español 'mil' es 1000.
-    elif 'mil' in texto:
+    # 'mil'
+    elif 'mil' in texto: # 'mil' es palabra completa usualmente o separada
         multiplicador = 1000
         texto = texto.replace('mil', '')
         
-    # 'm' (millones) - Solo si no es parte de 'mil' o 'min' (minutos no debería llegar aquí si filtramos bien antes)
-    elif 'm' in texto and 'mil' not in texto and 'min' not in texto:
+    # 'm' (millones) - Debe ser una 'm' sola al final o "millones"
+    # Evitar "Mundial", "Comentario"
+    elif re.search(r'\d+\s*m\b', texto) or 'millones' in texto:
         multiplicador = 1000000
-        texto = texto.replace('m', '')
+        texto = texto.replace('millones', '').replace('m', '')
 
     # 3. Normalizar decimales (coma a punto)
     texto = texto.replace(',', '.')

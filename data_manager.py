@@ -50,7 +50,8 @@ class GestorDeDatos:
         df_final = df_final.fillna("")
         
         df_final.to_csv(self.archivo_csv, index=False, encoding='utf-8', sep=';')
-        print(f"[✓] CSV actualizado. Registros totales: {len(df_final)}")
+        ruta_abs = os.path.abspath(self.archivo_csv)
+        print(f"[✓] CSV actualizado en: {ruta_abs}. Registros totales: {len(df_final)}")
 
     def obtener_ids_existentes(self) -> set:
         if os.path.exists(self.archivo_csv):

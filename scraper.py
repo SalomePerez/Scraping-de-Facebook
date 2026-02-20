@@ -103,8 +103,25 @@ class FacebookScraper:
                             # Usamos EVALUATE para extraer datos con JS directamente en el navegador
                             # Esto es mucho más robusto contra clases ofuscadas
                             datos_post = post.evaluate("""(p) => {
-                               // Asegurarse de trabajar siempre con el contenedor completo del post
-                               const root = p.closest('[role="article"]') || p;
+                               // Intentar subir niveles para encontrar el contenedor real del post
+                               // Si p es el mensaje, el contenedor está arriba.
+                               let root = p.closest('[role="article"]');
+                               
+                               if (!root) {
+                                   // Estrategia de búsqueda hacia arriba: subir hasta encontrar un div que tenga
+                                   // estructura de "Header" (con autor/fecha)
+                                   let current = p;
+                                   for (let i = 0; i < 6; i++) { // Subir máx 6 niveles
+                                       if (!current.parentElement) break;
+                                       current = current.parentElement;
+                                       // Si este padre tiene aria-posinset (Feed) o contiene un h2/h3 con enlace, es buen candidato
+                                       if (current.querySelector('h2 a, h3 a, strong a') && current.innerText.length > 50) {
+                                           root = current;
+                                           break;
+                                       }
+                                   }
+                                   if (!root) root = p; // Fallback al mismo elemento
+                               }
 
                                const getText = (sel) => {
                                    const el = root.querySelector(sel);
@@ -117,19 +134,27 @@ class FacebookScraper:
                                const autorEl = root.querySelector('h2 strong, h3 strong, h2 a, h3 a, strong > a');
                                if (autorEl) autor = autorEl.innerText;
                                if (!autor) {
-                                   // Fallback: buscar el primer enlace con texto que no sea vacio
+                                   // Fallback: buscar enlaces arriba del mensaje
+                                   // Asumimos que el autor está ANTES del mensaje en el DOM
+                                   // Pero querySelector busca en todo.
+                                   // Buscamos enlaces con texto corto (Nombre Apellido)
                                    const links = Array.from(root.querySelectorAll('a'));
                                    for (let l of links) {
-                                       if (l.innerText.length > 2 && l.innerText.length < 50) {
-                                           autor = l.innerText;
-                                           break;
+                                       // Ignorar enlaces que son hashtags o "Ver más"
+                                       if (l.innerText.length > 2 && l.innerText.length < 40 && !l.innerText.startsWith('#') && !l.innerText.includes('Ver más')) {
+                                           // El autor suele tener negrita o ser un h3/h4
+                                           const style = window.getComputedStyle(l);
+                                           if (style.fontWeight > 400 || l.querySelector('strong, span')) {
+                                               autor = l.innerText;
+                                               break;
+                                           }
                                        }
                                    }
                                }
 
                                // INTENTO 2: Fecha
                                let fecha = "";
-                               // Buscar abbr primero
+                               // Buscar abbr
                                const abbr = root.querySelector('abbr');
                                if (abbr) {
                                    if (abbr.getAttribute('data-utime')) {
@@ -140,9 +165,12 @@ class FacebookScraper:
                                }
                                if (!fecha) {
                                    // Buscar texto de fecha en enlaces (suelen estar debajo del autor)
-                                   // Buscamos un enlace que tenga un tooltip o que su texto parezca fecha
+                                   // Buscamos enlaces con aria-label que tengan hora/fecha
                                    const dateLink = root.querySelector('a[href*="/posts/"] abbr, a[href*="permalink"] abbr, span[id*="jsc"] a');
                                    if (dateLink) fecha = dateLink.innerText;
+                                   
+                                   // Si aun no hay fecha, buscar cualquier texto que parezca fecha (ej: "2 h")
+                                   // Iterar spans pequeños
                                }
                                
                                // INTENTO 3: URL
@@ -168,16 +196,20 @@ class FacebookScraper:
                                }
                                
                                // Si no encontramos en aria-label, buscar texto visible
+                               // Buscamos en el Footer del post (después del mensaje)
                                if (likes === "0" || comments === "0") {
+                                   // El footer suele estar despues del mensaje.
+                                   // Texto completo del root
                                    const textContent = root.innerText.toLowerCase();
                                    const lines = textContent.split('\\n');
                                    for (let line of lines) {
-                                       if (line.includes('comentario') || line.includes('comments')) {
+                                       if ((line.includes('comentario') || line.includes('comments')) && line.length < 30) {
                                            comments = line;
                                        }
-                                       // Es difícil distinguir likes de texto normal sin estructura, 
-                                       // pero a veces aparece "20 mil" al lado del icono.
-                                   }
+                                       if ((line.includes('me gusta') || line.includes('likes') || line.includes('reacciones')) && line.length < 30) {
+                                            likes = line;
+                                       }
+                                    }
                                }
 
                                return {autor, fecha, url, likes, comments};
